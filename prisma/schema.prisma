@@ -1,0 +1,157 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents  Document[]
+  checklists Checklist[]
+  questions  Question[]
+  sessions   Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expires   DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  size        Int
+  type        String
+  pageCount   Int?
+  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  uploadUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions    DocumentVersion[]
+  annotations DocumentAnnotation[]
+  analysis    AnalysisResult?
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  versionNum  Int
+  fileUrl     String
+  createdAt   DateTime @default(now())
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunks      DocumentChunk[]
+}
+
+model DocumentChunk {
+  id              String   @id @default(cuid())
+  versionId       String
+  pageNumber      Int
+  content         String
+  createdAt       DateTime @default(now())
+
+  version         DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  embeddings      DocumentEmbedding[]
+}
+
+model DocumentEmbedding {
+  id              String   @id @default(cuid())
+  chunkId         String
+  vector          Unsupported("vector(1536)")? // Using pgvector
+  model           String
+  
+  chunk           DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+}
+
+model DocumentAnnotation {
+  id          String   @id @default(cuid())
+  documentId  String
+  type        String   // BOOKMARK, HIGHLIGHT, NOTE
+  content     String?
+  location    String?  // JSON reference to page/position
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model AnalysisResult {
+  id              String   @id @default(cuid())
+  documentId      String   @unique
+  summary         String?
+  keyTopics       String?  // JSON array
+  importantDates  String?  // JSON array
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  detectedClauses DetectedClause[]
+}
+
+model DetectedClause {
+  id              String   @id @default(cuid())
+  analysisId      String
+  category        String
+  originalText    String
+  explanation     String
+  whyItMatters    String?
+  importance      String   // LOW, MEDIUM, HIGH
+  location        String?
+  questions       String?  // JSON array
+  createdAt       DateTime @default(now())
+
+  analysis        AnalysisResult @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+}
+
+model Question {
+  id          String   @id @default(cuid())
+  userId      String
+  documentId  String?
+  content     String
+  answer      String?
+  citations   String?  // JSON array of chunk/page references
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Checklist {
+  id          String   @id @default(cuid())
+  userId      String
+  documentId  String?
+  title       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       ChecklistItem[]
+}
+
+model ChecklistItem {
+  id          String   @id @default(cuid())
+  checklistId String
+  content     String
+  isCompleted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+}
