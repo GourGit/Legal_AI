@@ -1,0 +1,145 @@
+// use prisma-8
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+
+  documents  Document[]
+  checklists Checklist[]
+  questions  Question[]
+  sessions   Session[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  expires   TimestamptzString
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  size        Int
+  type        String
+  pageCount   Int?
+  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  uploadUrl   String?
+  createdAt   TimestamptzString @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions    DocumentVersion[]
+  annotations DocumentAnnotation[]
+  analysis    AnalysisResult?
+}
+
+model DocumentVersion {
+  id          String   @id @default(uuid())
+  documentId  String
+  versionNum  Int
+  fileUrl     String
+  createdAt   TimestamptzString @default(now())
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunks      DocumentChunk[]
+}
+
+model DocumentChunk {
+  id              String   @id @default(uuid())
+  versionId       String
+  pageNumber      Int
+  content         String
+  createdAt       TimestamptzString @default(now())
+
+  version         DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  embeddings      DocumentEmbedding[]
+}
+
+model DocumentEmbedding {
+  id              String   @id @default(uuid())
+  chunkId         String
+  vector          pgvector.Vector(length: 1536) // Using pgvector
+  model           String
+  
+  chunk           DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+}
+
+model DocumentAnnotation {
+  id          String   @id @default(uuid())
+  documentId  String
+  type        String   // BOOKMARK, HIGHLIGHT, NOTE
+  content     String?
+  location    String?  // JSON reference to page/position
+  createdAt   TimestamptzString @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model AnalysisResult {
+  id              String   @id @default(uuid())
+  documentId      String   @unique
+  summary         String?
+  keyTopics       String?  // JSON array
+  importantDates  String?  // JSON array
+  createdAt       TimestamptzString @default(now())
+  updatedAt       temporal.updatedAtString()
+
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  detectedClauses DetectedClause[]
+}
+
+model DetectedClause {
+  id              String   @id @default(uuid())
+  analysisId      String
+  category        String
+  originalText    String
+  explanation     String
+  whyItMatters    String?
+  importance      String   // LOW, MEDIUM, HIGH
+  location        String?
+  questions       String?  // JSON array
+  createdAt       TimestamptzString @default(now())
+
+  analysis        AnalysisResult @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+}
+
+model Question {
+  id          String   @id @default(uuid())
+  userId      String
+  documentId  String?
+  content     String
+  answer      String?
+  citations   String?  // JSON array of chunk/page references
+  createdAt   TimestamptzString @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Checklist {
+  id          String   @id @default(uuid())
+  userId      String
+  documentId  String?
+  title       String
+  createdAt   TimestamptzString @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       ChecklistItem[]
+}
+
+model ChecklistItem {
+  id          String   @id @default(uuid())
+  checklistId String
+  content     String
+  isCompleted Boolean  @default(false)
+  createdAt   TimestamptzString @default(now())
+  updatedAt   temporal.updatedAtString()
+
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+}
