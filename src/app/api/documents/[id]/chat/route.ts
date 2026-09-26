@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { db } from '@/prisma/db';
 import { aiProvider } from '@/lib/ai/provider';
 import { qnaSystemPrompt } from '@/lib/ai/prompts';
 
-const prisma = new PrismaClient();
-
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await req.json();
     const { question } = body;
 
@@ -20,25 +18,21 @@ export async function POST(
 
     // 1. Fetch document text/chunks (simplified for demo, typically uses vector search)
     // In a real RAG setup, we'd search DocumentEmbedding using pgvector
-    const document = await prisma.document.findUnique({
-      where: { id },
-      include: {
-        versions: {
-          include: {
-            chunks: true
-          },
-          orderBy: { versionNum: 'desc' },
-          take: 1
-        }
-      }
-    });
+    const document = await db.orm.public.Document
+      .where((d) => d.id.eq(id))
+      .include('versions')
+      .first();
 
     if (!document) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
     // Prepare context from chunks
-    const chunks = document.versions[0]?.chunks || [];
+    const latestVersion = document.versions.sort((a, b) => b.versionNum - a.versionNum)[0];
+    let chunks: any[] = [];
+    if (latestVersion) {
+      chunks = await db.orm.public.DocumentChunk.where((c) => c.versionId.eq(latestVersion.id)).all();
+    }
     const contextText = chunks.map(c => `[Page ${c.pageNumber}]: ${c.content}`).join('\n\n');
 
     // If no chunks (mock mode), just provide some dummy context
@@ -57,13 +51,11 @@ export async function POST(
     );
 
     // 3. Save Question to DB
-    const dbQuestion = await prisma.question.create({
-      data: {
-        userId: document.userId, // Link to document owner
-        documentId: id,
-        content: question,
-        answer: text,
-      }
+    const dbQuestion = await db.orm.public.Question.create({
+      userId: document.userId, // Link to document owner
+      documentId: id,
+      content: question,
+      answer: text,
     });
 
     return NextResponse.json({ 

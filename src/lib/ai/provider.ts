@@ -25,7 +25,6 @@ export class AIProvider {
       system: systemPrompt,
       prompt,
       temperature: options?.temperature ?? 0.1, // Low temperature for factual legal analysis
-      maxTokens: options?.maxTokens,
     });
 
     return { text, usage };
@@ -55,7 +54,6 @@ export class AIProvider {
       system: systemPrompt,
       prompt,
       temperature: options?.temperature ?? 0.1,
-      maxTokens: options?.maxTokens,
     });
 
     return result;

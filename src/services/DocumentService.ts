@@ -1,11 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { db } from '../prisma/db';
 import { aiProvider } from '../lib/ai/provider';
 import { DocumentAnalysisSchema, documentAnalysisSystemPrompt } from '../lib/ai/prompts';
 // import pdfParse from 'pdf-parse'; // Will be used when implemented
 // import mammoth from 'mammoth'; // Will be used when implemented
-
-const prisma = new PrismaClient();
-
 export class DocumentService {
   /**
    * Process and analyze an uploaded document
@@ -13,10 +10,7 @@ export class DocumentService {
   async processDocument(documentId: string, fileBuffer: Buffer, fileType: string) {
     try {
       // 1. Update status to processing
-      await prisma.document.update({
-        where: { id: documentId },
-        data: { status: 'PROCESSING' }
-      });
+      await db.orm.public.Document.where(d => d.id.eq(documentId)).update({ status: 'PROCESSING' });
 
       // 2. Extract Text (simplified for now, replace with actual parsing)
       let extractedText = '';
@@ -41,63 +35,49 @@ export class DocumentService {
       );
 
       // 4. Save Analysis to DB
-      const dbAnalysis = await prisma.analysisResult.create({
-        data: {
-          documentId,
-          summary: analysisResult.summary,
-          keyTopics: JSON.stringify(analysisResult.keyTopics),
-          importantDates: JSON.stringify(analysisResult.importantDates),
-        }
+      const dbAnalysis = await db.orm.public.AnalysisResult.create({
+        documentId,
+        summary: analysisResult.summary,
+        keyTopics: JSON.stringify(analysisResult.keyTopics),
+        importantDates: JSON.stringify(analysisResult.importantDates),
       });
 
       // 5. Save Clauses
       for (const clause of analysisResult.clauses) {
-        await prisma.detectedClause.create({
-          data: {
-            analysisId: dbAnalysis.id,
-            category: clause.category,
-            originalText: clause.originalText,
-            explanation: clause.explanation,
-            importance: clause.importance,
-            whyItMatters: clause.whyItMatters,
-            questions: JSON.stringify(clause.questionsToCheck),
-          }
+        await db.orm.public.DetectedClause.create({
+          analysisId: dbAnalysis.id,
+          category: clause.category,
+          originalText: clause.originalText,
+          explanation: clause.explanation,
+          importance: clause.importance,
+          whyItMatters: clause.whyItMatters,
+          questions: JSON.stringify(clause.questionsToCheck),
         });
       }
 
       // 6. Save Checklist
       if (analysisResult.checklist.length > 0) {
-        const checklist = await prisma.checklist.create({
-          data: {
-            userId: (await prisma.document.findUnique({ where: { id: documentId } }))?.userId || '',
-            documentId,
-            title: 'Before You Sign'
-          }
+        const checklist = await db.orm.public.Checklist.create({
+          userId: (await db.orm.public.Document.where(d => d.id.eq(documentId)).first())?.userId || '',
+          documentId,
+          title: 'Before You Sign'
         });
 
         for (const item of analysisResult.checklist) {
-          await prisma.checklistItem.create({
-            data: {
-              checklistId: checklist.id,
-              content: item
-            }
+          await db.orm.public.ChecklistItem.create({
+            checklistId: checklist.id,
+            content: item
           });
         }
       }
 
       // 7. Update document status
-      await prisma.document.update({
-        where: { id: documentId },
-        data: { status: 'COMPLETED' }
-      });
+      await db.orm.public.Document.where(d => d.id.eq(documentId)).update({ status: 'COMPLETED' });
 
       return { success: true, analysis: dbAnalysis };
     } catch (error) {
       console.error('Error processing document:', error);
-      await prisma.document.update({
-        where: { id: documentId },
-        data: { status: 'FAILED' }
-      });
+      await db.orm.public.Document.where(d => d.id.eq(documentId)).update({ status: 'FAILED' });
       throw error;
     }
   }
